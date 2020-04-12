@@ -12,6 +12,17 @@ pub fn sort<T: Ord>(x: &mut [T], order: &SortOrder) -> Result<(), String> {
   }
 }
 
+pub fn sort_by<T, F>(x: &mut [T], comparator: &F) -> Result<(),String>
+  where F: Fn(&T,T) -> Ordering
+{
+  if is_power_of_two(x.len()) {
+    do_sort(x, true, comparator);
+    Ok(())
+  } else {
+    Err(format!(" The length of x is not a power of two. (x. len(): {})", x. len()))
+  }
+}
+
 fn do_sort<T: Ord>(x: &mut [T], up: bool) {
   if x.len() > 1 {
     let mid_point = x.len()/2;
@@ -44,6 +55,38 @@ fn compare_and_swap<T: Ord>(x: &mut [T],up: bool) {
 mod tests {
   use super::sort;
   use crate::SortOrder::*; 
+
+  struct Student {
+    first_name: String,
+    last_name: String,
+    age: u8,
+  }
+
+  impl Student {
+    fn new(first_name: &str, last_name: &str, age: u8) -> Self {
+      Self{
+        first_name: first_name.to_string(),
+        last_name: last_name.to_string(),
+        age,
+      }
+    }
+  }
+
+  #[test]
+  fn sort_students_by_age_ascending(){
+    let taro = Student::new(" Taro", "Yamada", 16);
+    let hanako = Student::new(" Hanako", "Yamada", 14);
+    let kyoko = Student::new(" Kyoko", "Ito", 15);
+    let ryosuke = Student::new(" Ryosuke", "Hayashi", 17); // ソート 対象 の ベクタ を 作成 する
+    let mut x = vec![& taro, &hanako, &kyoko, &ryosuke]; // ソート 後 の 期待値 を 作成 する 
+    let expected = vec![& hanako, &kyoko, &taro, &ryosuke]; 
+    assert_ eq!( 
+      // sort_ by 関数 で ソート する。 第 2 引数 は ソート 順 を 決める クロージャ 
+      // 引数 に 2 つ の Student 構造 体 を とり、 age フィールド の 値 を cmp メソッド で 
+      // 比較 する こと で 大小 を 決定 する 
+      sort_by(& mut x, &|a, b | a. age. cmp(& b. age)), Ok(()) ); // 結果 を 検証 する 
+      assert_eq!( x, expected);
+  }
 
   #[test]
   fn sort_u32_ascending() {
