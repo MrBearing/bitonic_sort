@@ -1,8 +1,11 @@
 use super::SortOrder;
 use std::cmp::Ordering;
+use rayon;
+
+const PARALLEL_THRESHOLD: usize = 4096;
 
 
-pub fn sort<T: Ord>(x: &mut [T], order: &SortOrder) -> Result<(), String> {
+pub fn sort<T: Ord + Send>(x: &mut [T], order: &SortOrder) -> Result<(), String> {
   match *order {
     SortOrder::Ascending  => sort_by(x, &|a, b| a.cmp(&b)),
     SortOrder::Descending => sort_by(x, &|a, b| b.cmp(&a)),
@@ -10,8 +13,11 @@ pub fn sort<T: Ord>(x: &mut [T], order: &SortOrder) -> Result<(), String> {
 }
 
 
+
+
 pub fn sort_by<T, F>(x: &mut [T], comparator: &F) -> Result<(),String>
-  where F: Fn(&T, &T) -> Ordering
+  where T: Send,
+        F: Sync + Fn(&T, &T) -> Ordering
 {
   if x.len().is_power_of_two() {
     do_sort(x, true, comparator);
@@ -22,25 +28,44 @@ pub fn sort_by<T, F>(x: &mut [T], comparator: &F) -> Result<(),String>
 }
 
 fn do_sort<T , F>(x: &mut [T], forward: bool , comparator: &F)
-    where F: Fn(&T, &T) -> Ordering
+    where T: Send,
+          F: Sync + Fn(&T, &T) -> Ordering
 {
   if x.len() > 1 {
-    let mid_point = x.len()/2;
-    do_sort(&mut x[..mid_point], true, comparator);
-    do_sort(&mut x[mid_point..], false, comparator);
+    let mid_point = x.len() / 2;
+    // 一度可変の参照を作って要るので2回目に参照を作る事ができずエラーが出る
+    // let first = first;
+    // let second = second;
+
+    let (first, second) = x.split_at_mut(mid_point);
+
+    if mid_point >= PARALLEL_THRESHOLD{
+      rayon::join(|| do_sort(first, true, comparator),
+                  || do_sort(second, false, comparator));
+    }else{
+      do_sort(first, true, comparator);
+      do_sort(second, false, comparator);
+    }
     sub_sort(x, forward, comparator);
   }
 }
 
 fn sub_sort<T, F>(x: &mut [T], forward: bool, comparator: &F)
-    where F: Fn(&T, &T) -> Ordering
+    where T: Send,
+          F: Sync + Fn(&T, &T) -> Ordering
 { 
   if x.len() > 1 {
     compare_and_swap(x, forward, comparator);
     let mid_point = x.len() / 2;
-    sub_sort(&mut x[..mid_point], forward, comparator);
-    sub_sort(&mut x[mid_point..], forward, comparator);
-  } // false の場合の動作は？
+    let (first, second) = x.split_at_mut(mid_point);
+    if mid_point >= PARALLEL_THRESHOLD {
+      rayon::join(|| sub_sort(first, forward, comparator),
+                  || sub_sort(second, forward, comparator));  
+    } else {
+      sub_sort(first, forward, comparator);
+      sub_sort(second, forward, comparator);
+    }
+  }
 }
 
 fn compare_and_swap<T, F>(x: &mut [T], forward: bool, comparator: &F)
